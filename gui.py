@@ -32,12 +32,10 @@ class FaceApp:
         self.right_frame = self.create_scroll_area("Hình ảnh khuôn mặt được tách", "cyan")
         self.right_frame.pack(side="right", padx=10)
 
-        # Progress
-        self.progress_label = tk.Label(self.root, text="Đang xử lý", bg="khaki")
+        # Trạng thái xử lý
+        self.progress_var = tk.StringVar(value="Chọn ảnh để bắt đầu xử lý!")
+        self.progress_label = tk.Label(self.root, textvariable=self.progress_var, bg="white")
         self.progress_label.pack(pady=5)
-        self.progress_var = tk.StringVar(value="Ảnh đang được xử lý")
-        self.progress_box = tk.Label(self.root, textvariable=self.progress_var, bg="white")
-        self.progress_box.pack()
 
         # Thanh tiến trình
         self.progress_bar = ttk.Progressbar(self.root, orient="horizontal", length=300, mode="determinate")
@@ -70,6 +68,7 @@ class FaceApp:
         if paths:
             self.image_paths = list(set(paths))  # Loại bỏ trùng lặp
             self.display_images(self.left_frame.scroll_frame, self.image_paths)
+            self.progress_var.set("Nhấn 'Bấm để tách khuôn mặt' để xử lý!")
 
     def display_images(self, container, paths):
         for widget in container.winfo_children():
@@ -88,17 +87,20 @@ class FaceApp:
         self.progress_bar["value"] = 0
         self.progress_bar["maximum"] = len(self.image_paths)
         self.current_image_index = 0
+        self.progress_var.set(f"Đang xử lý: {os.path.basename(self.image_paths[0])}")
         thread = threading.Thread(target=self.process_images)
         thread.start()
         self.update_progress()
 
     def update_progress(self):
         if self.current_image_index < len(self.image_paths):
-            self.progress_var.set(f"Đang xử lý: {os.path.basename(self.image_paths[self.current_image_index])}")
-            self.progress_bar["value"] = self.current_image_index + 1
+            # Cập nhật trạng thái sau khi xử lý xong một ảnh
+            if self.current_image_index > 0:
+                self.progress_var.set(f"Xử lý xong: {os.path.basename(self.image_paths[self.current_image_index - 1])}")
+            self.progress_bar["value"] = self.current_image_index
             self.root.after(100, self.update_progress)
         else:
-            self.progress_var.set("Hoàn tất tách khuôn mặt!")
+            self.progress_var.set("Chọn ảnh khác để xử lý nào!")
             self.progress_bar["value"] = len(self.image_paths)
 
     def process_images(self):
@@ -110,6 +112,13 @@ class FaceApp:
             self.current_image_index = i
             faces = extract_faces(img_path, output_dir)
             self.face_paths.extend(faces)
+            # Cập nhật trạng thái sau khi xử lý xong một ảnh
+            self.root.after_idle(lambda: self.progress_var.set(
+                f"Xử lý xong: {os.path.basename(img_path)}" if i < len(self.image_paths) - 1 else 
+                f"Đang xử lý: {os.path.basename(self.image_paths[i + 1])}" if i + 1 < len(self.image_paths) else 
+                "Chọn ảnh khác để xử lý nào!"
+            ))
+            self.current_image_index = i + 1
 
         self.root.after_idle(lambda: self.display_images(self.right_frame.scroll_frame, self.face_paths))
 
