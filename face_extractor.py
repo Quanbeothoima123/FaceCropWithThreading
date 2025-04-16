@@ -1,47 +1,3 @@
-# import cv2
-# import os
-# from PIL import Image
-# from utils import preprocess_image_for_detection
-
-# def extract_faces(image_path, output_dir):
-#     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-
-#     # Đọc ảnh gốc để lưu kết quả
-#     original_img = cv2.imread(image_path)
-#     if original_img is None:
-#         print(f"Không thể đọc ảnh: {image_path}")
-#         return []
-
-#     # Tiền xử lý ảnh để phát hiện khuôn mặt
-#     processed_img = preprocess_image_for_detection(image_path)
-#     if processed_img is None:
-#         print(f"Không thể đọc ảnh: {image_path}")
-#         return []
-
-#     gray = cv2.cvtColor(processed_img, cv2.COLOR_BGR2GRAY)
-#     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3)
-
-#     face_images = []
-#     for i, (x, y, w, h) in enumerate(faces):
-#         # Tính toán lại tọa độ trên ảnh gốc
-#         height_processed, width_processed = processed_img.shape[:2]
-#         height_orig, width_orig = original_img.shape[:2]
-#         scale_x = width_orig / width_processed
-#         scale_y = height_orig / height_processed
-#         x_orig, y_orig = int(x * scale_x), int(y * scale_y)
-#         w_orig, h_orig = int(w * scale_x), int(h * scale_y)
-
-#         # Cắt khuôn mặt từ ảnh gốc
-#         face = original_img[y_orig:y_orig+h_orig, x_orig:x_orig+w_orig]
-#         pil_image = Image.fromarray(cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
-#         output_path = os.path.join(output_dir, f"{os.path.basename(image_path)}_face{i+1}.jpg")
-#         pil_image.save(output_path)
-#         face_images.append(output_path)
-
-#     return face_images
-
-
-
 import cv2
 import os
 import numpy as np
@@ -63,7 +19,7 @@ def extract_faces(image_path, output_dir):
     # Tiền xử lý ảnh để phát hiện khuôn mặt
     processed_img = preprocess_image_for_detection(image_path)
     if processed_img is None:
-        print(f"Không thể đọc ảnh: {image_path}")
+        print(f"Không thể xử lý ảnh: {image_path}")
         return []
 
     # Chuẩn bị ảnh cho DNN
@@ -72,33 +28,51 @@ def extract_faces(image_path, output_dir):
     net.setInput(blob)
     detections = net.forward()
 
+    print(f"[INFO] Phát hiện {detections.shape[2]} đối tượng trong ảnh.")
+
     face_images = []
-    # Ngưỡng độ tin cậy
-    confidence_threshold = 0.5
+    confidence_threshold = 0.3  # Hạ ngưỡng để phát hiện nhiều hơn
 
     for i in range(detections.shape[2]):
         confidence = detections[0, 0, i, 2]
         if confidence > confidence_threshold:
-            # Lấy tọa độ khuôn mặt
+            # Lấy tọa độ khuôn mặt trên ảnh đã xử lý
             box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
             (x, y, x2, y2) = box.astype("int")
-            x, y, w, h = x, y, x2 - x, y2 - y
 
-            # Tính toán lại tọa độ trên ảnh gốc
-            height_processed, width_processed = processed_img.shape[:2]
-            height_orig, width_orig = original_img.shape[:2]
-            scale_x = width_orig / width_processed
-            scale_y = height_orig / height_processed
-            x_orig, y_orig = int(x * scale_x), int(y * scale_y)
-            w_orig, h_orig = int(w * scale_x), int(h * scale_y)
+            # Giới hạn tọa độ không vượt ngoài khung ảnh xử lý
+            x = max(0, x)
+            y = max(0, y)
+            x2 = min(w - 1, x2)
+            y2 = min(h - 1, y2)
+
+            # Chuyển tọa độ về ảnh gốc
+            scale_x = original_img.shape[1] / w
+            scale_y = original_img.shape[0] / h
+            x_orig = int(x * scale_x)
+            y_orig = int(y * scale_y)
+            x2_orig = int(x2 * scale_x)
+            y2_orig = int(y2 * scale_y)
+
+            x_orig = max(0, x_orig)
+            y_orig = max(0, y_orig)
+            x2_orig = min(original_img.shape[1] - 1, x2_orig)
+            y2_orig = min(original_img.shape[0] - 1, y2_orig)
 
             # Cắt khuôn mặt từ ảnh gốc
-            face = original_img[y_orig:y_orig+h_orig, x_orig:x_orig+w_orig]
-            if face.size == 0:  # Kiểm tra vùng cắt hợp lệ
+            face = original_img[y_orig:y2_orig, x_orig:x2_orig]
+            if face.size == 0:
                 continue
+
+            # Lưu ảnh khuôn mặt
             pil_image = Image.fromarray(cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
-            output_path = os.path.join(output_dir, f"{os.path.basename(image_path)}_face{i+1}.jpg")
+            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            output_path = os.path.join(output_dir, f"{base_name}_face{i+1}.jpg")
             pil_image.save(output_path)
             face_images.append(output_path)
 
+            print(f"[INFO] Đã lưu khuôn mặt {i+1}: {output_path}")
+
+    if not face_images:
+        print("[INFO] Không phát hiện khuôn mặt nào vượt ngưỡng confidence.")
     return face_images
